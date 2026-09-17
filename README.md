@@ -1,56 +1,43 @@
 # Square Dispute Operations
 
-`dave/square-dispute-operations` is a RailCall module for bounded Square dispute discovery, evidence metadata/intelligence, and operator-governed dispute actions. It reports provider facts and bounded operational summaries; it does not make legal judgments, decide whether a case should be accepted or contested, or create/charge payments.
+`dave/square-dispute-operations` v0.1.0 is a Track 1 RailCall module for bounded Square dispute operations. It gives operators a structured view of disputes and evidence metadata, then routes consequential actions through native RailCall Station governance. It reports observed facts; it does not make legal judgments or decide whether a dispute should be accepted or contested.
 
-## Capabilities
+## What it covers
 
-The 16 commands are:
+Exactly 16 commands span:
 
-| Area | Commands |
+| Purpose | Commands |
 | --- | --- |
 | Discovery | `square.dispute.list`, `square.dispute.actionable_queue`, `square.dispute.deadline_queue`, `square.dispute.inspect` |
-| Evidence intelligence | `square.dispute.evidence_inventory`, `square.dispute.evidence_requirements`, `square.dispute.evidence_gap`, `square.dispute.evidence_text_prepare` |
-| Governed evidence actions | `square.dispute.evidence_text_create`, `square.dispute.evidence_delete` |
-| Accept / contest | `square.dispute.accept_preview`, `square.dispute.accept_execute`, `square.dispute.contest_preview`, `square.dispute.contest_execute` |
-| Follow-up | `square.dispute.reconcile`, `square.dispute.operational_summary` |
+| Case intelligence | `square.dispute.evidence_requirements` |
+| Evidence intelligence | `square.dispute.evidence_inventory`, `square.dispute.evidence_gap`, `square.dispute.evidence_text_prepare` |
+| Evidence mutation | `square.dispute.evidence_text_create`, `square.dispute.evidence_delete` |
+| Accept governance | `square.dispute.accept_preview`, `square.dispute.accept_execute` |
+| Contest governance | `square.dispute.contest_preview`, `square.dispute.contest_execute` |
+| Reconciliation and operations | `square.dispute.reconcile`, `square.dispute.operational_summary` |
 
-Discovery reads are bounded and expose completeness/continuation information instead of silently treating a capped result as exhaustive. The queues and evidence-gap command organize observed facts; operators remain responsible for case decisions and supporting documentation.
+See [COMMANDS.md](COMMANDS.md) for the complete command reference.
 
-## Governance and freshness
+## Governed operations
 
-The write commands are declared `write_requires_approval` and should be run through RailCall Station's native Airlock. A staged request is a proposal, not an execution. Station approval is bound to the exact command input; changing the payload requires a new approval.
+Consequential writes require native RailCall Station Airlock approval. Accept and contest are separate preview and execute commands; execution is tied to the approved plan and revalidates relevant Square state. Evidence create establishes case and complete-inventory baselines internally from bounded fresh reads, then revalidates before mutation. The caller does not provide case or inventory fingerprints. Stale state fails closed. After an operation, reconciliation observes provider state instead of blindly retrying an ambiguous irreversible action.
 
-Accept and contest use a previewed plan and an execute command that receives that exact plan. Before an irreversible operation, the module re-reads relevant Square state and rejects stale case, environment, or evidence-inventory bindings. These checks reduce stale-action risk but are not an atomic compare-and-swap with Square. An accepted dispute is a concession; a submitted contest is not a promise that the dispute will be won.
+These checks reduce stale-action risk but are not an atomic compare-and-swap with Square. The module does not claim universal exactly-once behavior or guarantee an outcome from a submitted contest.
 
-Evidence text creation is text-only in v0.1.0. `evidence_text_prepare` locally validates the exact text and returns a commitment without echoing the text. The create command takes the expected environment, dispute ID, evidence type, and exact text. At execution it computes an internal case/inventory baseline from bounded fresh reads, repeats the complete precondition reads immediately before mutation, and fails closed if either fingerprint changed. Callers do not supply fingerprint values. It then verifies the provider's resulting evidence metadata. Evidence deletion is also a governed write. This module does not upload files or attachments.
+## Verified evidence
 
-Irreversible accept/contest operations and evidence deletion are not blindly retried after ambiguous outcomes; reconcile before deciding what to do next. Evidence text creation has only a bounded retry using the same exact request and idempotency identity. It never retries with altered content.
+The established evidence includes a final mocked/regression suite of **92 passing tests**, direct-handler Square Sandbox E2E coverage, and a separate native Station integration. The Station evidence includes 16/16 command discovery, Sandbox Vault resolution, a successful Airlock-governed evidence create, one observed Sandbox creation, and receipt signature verification passing six checks. Details and boundaries are in [TESTED.md](TESTED.md).
 
-## Installation and credentials
+## Installation and configuration
 
-Install the module using the normal RailCall Marketplace path:
+Install through the RailCall Marketplace:
 
 ```sh
 railcall market install dave/square-dispute-operations
 ```
 
-Configure the module's namespaced Square credential in Station Integrations/Vault. Required fields are:
+Configure the module's namespaced Square credential in Station Vault/Integrations with an access token and `environment` set to `sandbox` or `production`. Use a Sandbox credential for test accounts. Keep credentials in Station's credential store; never put them in source, command examples, receipts, or reports. Use commands through Station when relying on Airlock approvals and native receipts.
 
-- `access_token`: a Square access token, stored only in the Station credential store;
-- `environment`: `sandbox` or `production`.
+## Limitations
 
-The environment selects Square's Sandbox or production API host. Use a Sandbox token with `environment=sandbox` for test accounts. Never place a real token in source, examples, command arguments, receipts, or public documentation.
-
-Invoke commands through Station. For example, a read uses `square.dispute.list`; inspect requires a dispute ID. Accept and contest require operator review of the previewed plan and native approval before execution. Evidence creation likewise requires an approved exact payload. Do not call the handler directly when claiming Station Airlock governance or Station receipts.
-
-## Bounded reads and privacy
-
-List, queue, inventory, and summary operations accept bounded pagination controls where applicable. Outputs report completeness and continuation state so callers can distinguish a complete scan from a partial one. The module uses fixed Square hosts and does not accept arbitrary request URLs.
-
-Module responses and normalized provider errors avoid echoing the access token and raw evidence text. The exact evidence text is necessarily part of the proposed write for operator review and is sent to Square if approved. Apply the local Station's receipt/log retention policy accordingly. Evidence inventory is metadata-oriented; the module does not claim to validate the truth of submitted evidence.
-
-## Sandbox compatibility and limitations
-
-Square Sandbox responses can differ from production. The bounded compatibility cases covered by v0.1.0 include Sandbox disputes whose object `version` is absent or null and Sandbox inventories that omit an empty evidence array. The module tolerates only the explicitly supported cases; production validation remains stricter. A preview can become stale between its final preflight read and the provider write because Square does not provide an atomic compare-and-swap for this operation.
-
-This module does not create payments, accept or contest automatically, assess evidence truth, provide legal advice, upload attachments, or guarantee a final dispute outcome. Reconciliation reports observed state and bounded causal limits; it does not turn an ambiguous provider response into certainty.
+Evidence submission is text-only in v0.1.0; file and attachment upload are not supported. A Sandbox contest observed in `PROCESSING` is not a win or loss. Evidence inventory is metadata-oriented and does not verify evidence truth. Irreversible Accept and Submit operations are not automatically retried when their outcome is ambiguous. See [ARCHITECTURE.md](ARCHITECTURE.md) and [SECURITY.md](SECURITY.md) for the operating and safety boundaries.
